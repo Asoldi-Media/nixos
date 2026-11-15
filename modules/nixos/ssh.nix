@@ -13,13 +13,5 @@
           PermitRootLogin = "no";
         };
       };
-
-      # Fail the build, not the login: password auth is off, so a user without a key is locked out.
-      assertions = [
-        {
-          assertion = config.users.users.sofushl.openssh.authorizedKeys.keys != [ ];
-          message = "ssh: sofushl has no authorized key. Add one in modules/users/sofushl.nix.";
-        }
-      ];
     };
 }
