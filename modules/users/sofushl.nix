@@ -4,7 +4,10 @@
     users.users.sofushl = {
       isNormalUser = true;
       description = "sofushl";
-      extraGroups = [ "wheel" "networkmanager" ];
+      extraGroups = [
+        "wheel"
+        "networkmanager"
+      ];
       initialPassword = "changeme"; # CHANGE with `passwd` after first login
       # Public keys copied from /home/sofushl/nixos/lib/sshkeys.nix and hosts.nix
       openssh.authorizedKeys.keys = [
@@ -13,6 +16,5 @@
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIGAcSwH3R5VjlCT0zu2lpH9uMB9wjRbKhBY7uSsceQF2 sofushl@Elitebook"
       ];
     };
-    home-manager.users.sofushl.home.stateVersion = "25.05";
   };
 }

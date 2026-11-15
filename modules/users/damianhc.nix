@@ -7,6 +7,5 @@
       extraGroups = [ "networkmanager" ];
       initialPassword = "changeme"; # CHANGE with `passwd` after first login
     };
-    home-manager.users.damianhc.home.stateVersion = "25.05";
   };
 }
