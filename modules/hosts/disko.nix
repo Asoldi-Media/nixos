@@ -1,12 +1,11 @@
-# Disk layout for eeehhto. Published as flake.nixosModules.eeehhto-disko
 { inputs, ... }:
 {
-  flake.nixosModules.eeehhto-disko = {
+  flake.nixosModules.disko = {
     imports = [ inputs.disko.nixosModules.disko ];
 
     disko.devices.disk.main = {
       type = "disk";
-      device = "/dev/nvme0n1"; # CHECK with `lsblk` before installing
+      device = "/dev/nvme0n1";
       content = {
         type = "gpt";
         partitions = {

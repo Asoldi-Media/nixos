@@ -7,6 +7,10 @@
     services.displayManager.cosmic-greeter.enable = true;
     environment.systemPackages = with pkgs; [
       librewolf
+      btop
+      claude-code
+      cursor-cli
+      code-cursor
     ];
   };
 }
