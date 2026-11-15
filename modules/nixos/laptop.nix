@@ -1,6 +1,6 @@
-# Feature module: laptop power and input defaults, published as flake.modules.nixos.laptop
+# Feature module: laptop power and input defaults, published as flake.nixosModules.laptop
 {
-  flake.modules.nixos.laptop = {
+  flake.nixosModules.laptop = {
     services.power-profiles-daemon.enable = true;
     services.upower.enable = true;
     services.libinput.enable = true;

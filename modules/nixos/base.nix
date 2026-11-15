@@ -1,14 +1,17 @@
-# Feature module: shared NixOS settings, published as flake.modules.nixos.base
+# Feature module: shared NixOS settings, published as flake.nixosModules.base
 {
-  flake.modules.nixos.base =
-    { pkgs, ... }:
+  flake.nixosModules.base =
+    { pkgs, lib, ... }:
     {
-      nix.settings.experimental-features = [ "nix-command" "flakes" ];
+      nix.settings.experimental-features = [
+        "nix-command"
+        "flakes"
+      ];
       nixpkgs.config.allowUnfree = true;
       time.timeZone = "Europe/Oslo";
       i18n.defaultLocale = "en_US.UTF-8";
       networking.networkmanager.enable = true;
       environment.systemPackages = [ pkgs.git ];
-      system.stateVersion = "25.05";
+      system.stateVersion = lib.mkDefault "26.11";
     };
 }

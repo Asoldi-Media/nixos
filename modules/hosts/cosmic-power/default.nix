@@ -1,15 +1,19 @@
 # Host composition: nixosConfigurations.cosmic-power
-{ inputs, config, ... }:
+{ self, inputs, ... }:
 {
   flake.nixosConfigurations.cosmic-power = inputs.nixpkgs.lib.nixosSystem {
     modules = [
-      config.flake.modules.nixos.base
-      config.flake.modules.nixos.laptop
-      config.flake.modules.nixos.cosmic
-      config.flake.modules.nixos.sofushl
-      config.flake.modules.nixos.damianhc
+      self.nixosModules.base
+      self.nixosModules.laptop
+      self.nixosModules.cosmic
+      self.nixosModules.sofushl
+      self.nixosModules.damianhc
+      self.nixosModules.cosmic-power-disko
       ./_hardware.nix
-      { networking.hostName = "cosmic-power"; }
+      {
+        networking.hostName = "cosmic-power";
+        system.stateVersion = "26.11";
+      }
     ];
   };
 }
