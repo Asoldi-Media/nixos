@@ -5,15 +5,13 @@
     modules = [
       self.nixosModules.base
       self.nixosModules.laptop
+      self.nixosModules.ssh
       self.nixosModules.cosmic
       self.nixosModules.sofushl
       self.nixosModules.damianhc
       self.nixosModules.cosmic-power-disko
       ./_hardware.nix
-      {
-        networking.hostName = "cosmic-power";
-        system.stateVersion = "26.11";
-      }
+      { networking.hostName = "cosmic-power"; }
     ];
   };
 }
