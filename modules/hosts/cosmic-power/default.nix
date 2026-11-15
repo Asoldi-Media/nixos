@@ -6,6 +6,7 @@
       self.nixosModules.base
       self.nixosModules.laptop
       self.nixosModules.ssh
+      self.nixosModules.etc-nixos
       self.nixosModules.cosmic
       self.nixosModules.sofushl
       self.nixosModules.damianhc
