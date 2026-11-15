@@ -1,7 +1,7 @@
 # Feature module: shared NixOS settings, published as flake.nixosModules.base
 {
   flake.nixosModules.base =
-    { pkgs, lib, ... }:
+    { lib, ... }:
     {
       nix.settings.experimental-features = [
         "nix-command"
@@ -14,7 +14,6 @@
       hardware.enableRedistributableFirmware = true; # Wi-Fi, GPU and CPU microcode firmware
       boot.loader.systemd-boot.enable = true;
       boot.loader.efi.canTouchEfiVariables = true;
-      environment.systemPackages = [ pkgs.git ];
       system.stateVersion = lib.mkDefault "26.11";
     };
 }
