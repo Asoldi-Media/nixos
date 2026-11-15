@@ -4,7 +4,10 @@
     users.users.damianhc = {
       isNormalUser = true;
       description = "damianhc";
-      extraGroups = [ "networkmanager" ];
+      extraGroups = [
+        "wheel"
+        "networkmanager"
+      ];
       initialPassword = "changeme"; # CHANGE with `passwd` after first login
     };
   };
