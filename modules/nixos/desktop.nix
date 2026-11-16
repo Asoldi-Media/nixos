@@ -11,6 +11,7 @@
       claude-code
       cursor-cli
       code-cursor
+      gh
     ];
   };
 }
