@@ -42,7 +42,7 @@ curl -fsSLo /tmp/join.sh https://raw.githubusercontent.com/Asoldi-Media/nixos/ma
 ```
 
 Claude can give you the same line pinned to a commit. Then:
-1. Type the laptop's password.
+1. Type the laptop's password. If it says "not in the sudoers file", your account is not an admin on that laptop. Switch to an admin account in the same terminal (`su - <admin>`) and run `sudo sh /tmp/join.sh` again.
 2. Open the Tailscale link it shows, or scan the QR code.
 3. Sign in with the same Tailscale account as the Windows laptop.
 
@@ -51,7 +51,7 @@ At the end the script prints the laptop's Tailscale name and IP, for example `ni
 ### 2. From the Windows laptop
 
 Claude does the rest as `root@<name>` over Tailscale SSH:
-1. Checks that `hostname` and the machine are the new laptop, not an existing host.
+1. Checks that `hostname` and the machine are the new laptop, not an existing host. If it already is a host here (Cospow was `cosmic-power` from an older version of this repo), Claude updates that host instead of adding a new one.
 2. Moves the old config to `/etc/nixos.before-asoldi` and clones this repo to `/etc/nixos`.
 3. Runs `scripts/add-host.sh <HostName>` (with `TS_NAME=<name>`). It writes `modules/hosts/<HostName>/` from the running machine:
    - its own disk, encryption (LVM on LUKS included) and EFI setup;
@@ -60,10 +60,11 @@ Claude does the rest as `root@<name>` over Tailscale SSH:
    - the people who log in today.
 
    It stops on setups it cannot handle safely: legacy BIOS, Secure Boot, a full EFI partition, or Wi-Fi without NetworkManager. It also prints REVIEW lines for every old setting that needs a decision.
-4. Builds the new system, then compares it with the running one: packages, systemd units, kernel parameters.
+4. Builds the new system, then compares it with the running one: packages, systemd units, initrd contents, firmware, fstab and kernel parameters. Runs `switch-to-configuration dry-activate` to see what would restart, and arms rescue timers (`systemd-run --on-active=15min ...`) that bring the temporary Tailscale back if the laptop is not reachable after the switch.
 5. Commits the host folder on the laptop and fetches that commit to Windows, which pushes it. Workers never push. Afterwards a `git pull` on the laptop is a plain fast-forward.
 6. Starts `scripts/switch-over.sh` with `systemd-run` (with `-E PATH=/run/wrappers/bin:/run/current-system/sw/bin` and bash called directly), so the switch survives the SSH session dropping. It:
    - keeps today's system as the boot entry `before-asoldi`;
+   - copies Tailscale's SSH host keys to `/etc/ssh`, so the host key stays the same after the handover;
    - installs systemd-boot if GRUB was used;
    - switches, which hands Tailscale over to the permanent service with the same identity;
    - restarts the temporary Tailscale if the permanent one does not come up.
@@ -79,7 +80,9 @@ Use `nix-shell -p git` if git is missing.
 
 ### 3. Afterwards
 
-- **Test reboot, with someone at the laptop.** A laptop with disk encryption asks for the passphrase at every boot, and a worker stays offline until someone types it. If the new entry does not boot, pick `before-asoldi` in the boot menu.
+- **Test reboot, with someone at the laptop.** Do not press anything at the boot menu. The first entry, the newest "NixOS (Generation N)", is the default and starts by itself after 5 seconds. The other entries are older systems: "NixOS [before-asoldi]" is the system from before the switch. Pick one only to go back, and the choice lasts one boot. The old systems lack the new apps and the permanent Tailscale. A laptop with disk encryption asks for the passphrase at every boot, and a worker stays offline until someone types it.
+- **Drop the old entries once the test reboot worked,** so nobody boots them by mistake (they also keep the old users and rights):
+  `rm /nix/var/nix/profiles/system-profiles/before-asoldi*`, then `nix-env -p /nix/var/nix/profiles/system --delete-generations old`, then `/run/current-system/bin/switch-to-configuration boot`.
 - **Turn off Tailscale key expiry.** In https://login.tailscale.com/admin/machines, open the new machine's `⋯` menu and choose `Disable key expiry`. Otherwise it drops off the network after 180 days.
 - **Passwords.** Accounts that are new on that laptop (`damianhc`, `sofushl`) start locked: set a password with `sudo passwd <name>` when someone needs to sign in at the screen. Existing accounts keep their passwords.
 - **Logins, when needed:** `claude`, `gh auth login`, `cursor-agent login`.

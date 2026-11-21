@@ -10,7 +10,8 @@
 # Then reconnect after a minute or two and read /var/log/asoldi-switch.log.
 # What it does:
 #  1. keeps today's system as the boot entry "before-asoldi" (garbage collection
-#     never removes it);
+#     never removes it), and copies Tailscale's SSH host keys to /etc/ssh so the
+#     host key Claude trusts stays the same after the handover;
 #  2. makes the new system the default and activates it. On a laptop without
 #     systemd-boot yet (GRUB) it installs systemd-boot and puts it first in the
 #     firmware boot order;
@@ -21,7 +22,8 @@
 # The keep-awake unit from join.sh stays until the reboot: the running logind keeps
 # its old lid settings until then.
 # Undo: /nix/var/nix/profiles/system-profiles/before-asoldi/bin/switch-to-configuration boot,
-# then reboot (or pick "before-asoldi" in the boot menu).
+# then reboot (or pick "before-asoldi" in the boot menu; that lasts one boot only).
+# Once a reboot into the new system worked, drop the old entries (README step 3).
 set -uo pipefail
 export PATH=/run/wrappers/bin:/run/current-system/sw/bin:${PATH:-}
 
@@ -58,6 +60,26 @@ if [ ! -e /nix/var/nix/profiles/system-profiles/before-asoldi ]; then
   nix-env -p /nix/var/nix/profiles/system-profiles/before-asoldi --set "$old" &&
     log "kept the old system as boot entry before-asoldi"
 fi
+
+# Keep the SSH host key Claude already trusts. Tailscale SSH serves the keys in
+# /etc/ssh once they exist, and the switch would create new ones there (sshd), so
+# put Tailscale's own keys there first. Converted in a temp file, moved in only
+# when that worked.
+mkdir -p /etc/ssh
+for t in ed25519 rsa ecdsa; do
+  src=${TS_SSH_DIR:-/var/lib/tailscale/ssh}/ssh_host_${t}_key
+  dst=${SSH_DIR:-/etc/ssh}/ssh_host_${t}_key
+  [ -s "$src" ] && [ ! -e "$dst" ] || continue
+  tmp=$(mktemp "$(dirname "$dst")/.hostkey.XXXXXX") || continue
+  if cat "$src" >"$tmp" && ssh-keygen -q -p -N "" -P "" -f "$tmp" >/dev/null &&
+    ssh-keygen -y -f "$tmp" >"$tmp.pub" && chmod 600 "$tmp" && chmod 644 "$tmp.pub" &&
+    mv "$tmp.pub" "$dst.pub" && mv "$tmp" "$dst"; then
+    log "kept the SSH host key ($t)"
+  else
+    rm -f "$tmp" "$tmp.pub"
+    log "could not keep the $t SSH host key; expect a host key change at the handover"
+  fi
+done
 
 # 2. New default, then activate.
 esp=
