@@ -5,7 +5,40 @@
       self.nixosModules.default
       self.nixosModules.disko # installed with the shared disko layout
       self.nixosModules.hardware
-      { networking.hostName = "Cospow"; }
+      self.nixosModules.worker # always-on worker since 2026-11-21, Tailscale name nix32-1
+      (
+        { lib, ... }:
+        {
+          networking.hostName = "Cospow";
+          # Core Ultra 7 155H: Intel NPU driver and firmware, as in the original install.
+          hardware.cpu.intel.npu.enable = true;
+
+          # damianhc is the only admin on this laptop. sofushl keeps a normal
+          # account, without the usual ways around that:
+          users.users.sofushl.extraGroups = lib.mkForce [ "networkmanager" ];
+          users.users.sofushl.openssh.authorizedKeys.keys = lib.mkForce [ ]; # no SSH login here (there was none before)
+          security.pam.services.su.requireWheel = true; # su only for admins
+          boot.loader.systemd-boot.editor = false; # no kernel command-line edits in the boot menu
+          # Tailscale SSH lets every device of the owner's account in as root, so a
+          # non-admin here must not reach the tailnet at all (MagicDNS stays allowed).
+          networking.firewall.extraCommands = ''
+            ip46tables -N asoldi-no-tailnet 2>/dev/null || true
+            ip46tables -F asoldi-no-tailnet
+            iptables -A asoldi-no-tailnet -d 100.100.100.100 -p udp --dport 53 -j RETURN
+            iptables -A asoldi-no-tailnet -d 100.100.100.100 -p tcp --dport 53 -j RETURN
+            ip6tables -A asoldi-no-tailnet -d fd7a:115c:a1e0::53 -p udp --dport 53 -j RETURN
+            ip6tables -A asoldi-no-tailnet -d fd7a:115c:a1e0::53 -p tcp --dport 53 -j RETURN
+            ip46tables -A asoldi-no-tailnet -j REJECT
+            ip46tables -C OUTPUT -o tailscale0 -m owner --uid-owner sofushl -j asoldi-no-tailnet 2>/dev/null ||
+              ip46tables -A OUTPUT -o tailscale0 -m owner --uid-owner sofushl -j asoldi-no-tailnet
+          '';
+          networking.firewall.extraStopCommands = ''
+            ip46tables -D OUTPUT -o tailscale0 -m owner --uid-owner sofushl -j asoldi-no-tailnet 2>/dev/null || true
+            ip46tables -F asoldi-no-tailnet 2>/dev/null || true
+            ip46tables -X asoldi-no-tailnet 2>/dev/null || true
+          '';
+        }
+      )
     ];
   };
 }

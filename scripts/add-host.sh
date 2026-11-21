@@ -245,4 +245,5 @@ drv=$("$NIX" eval --raw ".#nixosConfigurations.$host.config.system.build.topleve
 say "evaluates: $drv"
 say "next: $NIX build .#nixosConfigurations.$host.config.system.build.toplevel  (makes ./result)"
 say "      nix store diff-closures /run/current-system ./result ; diff the unit lists too"
-say "      git commit the host folder here, then: systemd-run --unit=asoldi-switch --collect $PWD/scripts/switch-over.sh $host \"\$(readlink -f result)\""
+say "      git commit the host folder here, then:"
+say "      systemd-run -q --unit=asoldi-switch --collect -E PATH=/run/wrappers/bin:/run/current-system/sw/bin /run/current-system/sw/bin/bash $PWD/scripts/switch-over.sh $host \"\$(readlink -f result)\""

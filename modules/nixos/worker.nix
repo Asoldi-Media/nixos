@@ -1,7 +1,7 @@
 # Feature module: always-on worker. Eeto (Tailscale name nix32) uses it, and so does
 # every laptop added with scripts/add-host.sh. Reachable over Tailscale SSH, never
 # sleeps, passwordless sudo for damianhc, Docker and dev tools.
-# Published as flake.nixosModules.worker. Not used by Cospow.
+# Published as flake.nixosModules.worker. Cospow (nix32-1) uses it too.
 {
   flake.nixosModules.worker =
     { pkgs, ... }:

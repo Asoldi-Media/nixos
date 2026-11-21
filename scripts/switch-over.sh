@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Make a built host config live on a laptop that joined with scripts/join.sh,
 # without losing remote access. Run it as its own service, so it keeps going when
-# the Tailscale SSH session drops at the handover:
+# the Tailscale SSH session drops at the handover. Services started by systemd-run
+# get no usable PATH on NixOS, so pass one and call bash directly:
 #
-#   systemd-run -q --unit=asoldi-switch --collect /etc/nixos/scripts/switch-over.sh <Host> "$(readlink -f result)"
+#   systemd-run -q --unit=asoldi-switch --collect -E PATH=/run/wrappers/bin:/run/current-system/sw/bin \
+#     /run/current-system/sw/bin/bash /etc/nixos/scripts/switch-over.sh <Host> "$(readlink -f result)"
 #
 # Then reconnect after a minute or two and read /var/log/asoldi-switch.log.
 # What it does:
@@ -16,9 +18,12 @@
 #     (join.sh set Conflicts=); both share the state file, so the identity stays;
 #  4. if the permanent Tailscale is not running after 90 s, it starts the
 #     temporary one again, so Claude can get back in and look.
+# The keep-awake unit from join.sh stays until the reboot: the running logind keeps
+# its old lid settings until then.
 # Undo: /nix/var/nix/profiles/system-profiles/before-asoldi/bin/switch-to-configuration boot,
 # then reboot (or pick "before-asoldi" in the boot menu).
 set -uo pipefail
+export PATH=/run/wrappers/bin:/run/current-system/sw/bin:${PATH:-}
 
 TS_OUT=/nix/store/vng6r3d53ks2v6ymvp70xmdkb17lm0gd-tailscale-1.104.6 # same as join.sh
 STATE=/var/lib/tailscale/tailscaled.state
@@ -84,7 +89,6 @@ for _ in $(seq 45); do
 done
 if [ "$st" = Running ] && systemctl is-active --quiet tailscaled.service; then
   log "permanent Tailscale is running"
-  systemctl stop asoldi-join-awake.service 2>/dev/null || true
 else
   log "permanent Tailscale is NOT running (state '$st'); starting the temporary one again"
   systemctl stop tailscaled.service 2>/dev/null || true

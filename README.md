@@ -12,7 +12,7 @@ All laptops use the same pinned NixOS: nixos-unstable through `flake.lock`, 26.1
 | Host (OS name) | Tailscale name | Disk setup | Worker |
 |---|---|---|---|
 | `Eeto` | `nix32` | shared disko layout (`modules/hosts/disko.nix`) | yes |
-| `Cospow` | none | shared disko layout | no |
+| `Cospow` | `nix32-1` | shared disko layout | yes (sofushl is not an admin here) |
 
 Every `.nix` file under `modules/` is loaded automatically (flake-parts + import-tree). Paths with `/_` in them are skipped. That is how each host's generated `_hardware.nix` stays a plain NixOS module.
 
@@ -62,7 +62,7 @@ Claude does the rest as `root@<name>` over Tailscale SSH:
    It stops on setups it cannot handle safely: legacy BIOS, Secure Boot, a full EFI partition, or Wi-Fi without NetworkManager. It also prints REVIEW lines for every old setting that needs a decision.
 4. Builds the new system, then compares it with the running one: packages, systemd units, kernel parameters.
 5. Commits the host folder on the laptop and fetches that commit to Windows, which pushes it. Workers never push. Afterwards a `git pull` on the laptop is a plain fast-forward.
-6. Starts `scripts/switch-over.sh` with `systemd-run`, so the switch survives the SSH session dropping. It:
+6. Starts `scripts/switch-over.sh` with `systemd-run` (with `-E PATH=/run/wrappers/bin:/run/current-system/sw/bin` and bash called directly), so the switch survives the SSH session dropping. It:
    - keeps today's system as the boot entry `before-asoldi`;
    - installs systemd-boot if GRUB was used;
    - switches, which hands Tailscale over to the permanent service with the same identity;
