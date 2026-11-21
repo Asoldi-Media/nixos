@@ -12,9 +12,27 @@ All laptops use the same pinned NixOS: nixos-unstable through `flake.lock`, 26.1
 | Host (OS name) | Tailscale name | Disk setup | Worker |
 |---|---|---|---|
 | `Eeto` | `nix32` | shared disko layout (`modules/hosts/disko.nix`) | yes |
-| `Cospow` | `nix32-1` | shared disko layout | yes (sofushl is not an admin here) |
+| `Cospow` | `nix32-main` | shared disko layout | yes, the main worker (sofushl is not an admin here) |
 
 Every `.nix` file under `modules/` is loaded automatically (flake-parts + import-tree). Paths with `/_` in them are skipped. That is how each host's generated `_hardware.nix` stays a plain NixOS module.
+
+## Working from any laptop: handing out work, approvals and questions
+
+Any of your computers can be the day-to-day one, and the others are workers. Nothing has to be set up per day-to-day computer.
+
+- **Hand out work:** in Claude on the day-to-day computer, say which worker should do it, for example "run this on nix32-main". Claude connects with `ssh nix32-main` over Tailscale. On a NixOS laptop the worker module sets that up; on Windows or a Mac it needs this in `~/.ssh/config`:
+  ```
+  Host nix*
+    User damianhc
+  ```
+- **No prompts on workers:** the worker module sets Claude Code's managed settings (`/etc/claude-code/managed-settings.json`):
+  - auto mode by default;
+  - Workflow launches pre-approved;
+  - carry on automatically after a usage limit;
+  - Remote Control in every session.
+
+  Normal work never stops for an approval. Auto mode's safety check still blocks risky actions on its own, without asking you.
+- **Where questions and approvals show up:** open **claude.ai/code** in a browser on any computer, or the **Claude app** on your phone (Code). Worker sessions are in the session list under their names, for example "nix32-main Wave 6 manager". Questions and any approval request show up inside that session, and you answer them there. Workers also send a push notification when one is waiting.
 
 ## Update a laptop to what is on GitHub
 

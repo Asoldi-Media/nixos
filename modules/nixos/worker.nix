@@ -1,11 +1,72 @@
 # Feature module: always-on worker. Eeto (Tailscale name nix32) uses it, and so does
 # every laptop added with scripts/add-host.sh. Reachable over Tailscale SSH, never
 # sleeps, passwordless sudo for damianhc, Docker and dev tools.
-# Published as flake.nixosModules.worker. Cospow (nix32-1) uses it too.
+# Published as flake.nixosModules.worker. Cospow (nix32-main) uses it too.
 {
   flake.nixosModules.worker =
     { pkgs, ... }:
     {
+      # Claude Code works here without approval prompts (owner decision 2026-11-21:
+      # "Auto mode + no prompts"). Managed settings apply to every session on this laptop:
+      # - auto mode by default; its safety check still blocks risky actions without asking;
+      # - Workflow launches pre-approved (a large workflow script cannot be approved in the
+      #   dialog at all, so without this a worker waits forever);
+      # - after a usage limit, wait for the reset and carry on;
+      # - every session starts Remote Control, so it shows up at claude.ai/code.
+      environment.etc."claude-code/managed-settings.json".text = builtins.toJSON {
+        permissions = {
+          defaultMode = "auto";
+          allow = [ "Workflow" ];
+        };
+        skipWorkflowUsageWarning = true;
+        autoContinueAtUsageLimit = true;
+        remoteControlAtStartup = true;
+      };
+      # Managed instructions for every Claude session on this laptop
+      environment.etc."claude-code/CLAUDE.md".text = ''
+        # Asoldi worker laptop (managed by github.com/Asoldi-Media/nixos, modules/nixos/worker.nix)
+
+        This laptop is one of the owner's always-on workers. Work runs here without approval
+        prompts: auto mode is the default and Workflow launches are pre-approved. Do not ask the
+        owner to approve routine steps; keep the questions for real decisions.
+
+        When you need the owner (a decision, a login, something only he can do):
+        1. Ask with AskUserQuestion in your own session. Sessions run with Remote Control, so the
+           question shows up at claude.ai/code and in the Claude app, on whichever computer or
+           phone he uses day to day.
+        2. Also send a push notification (PushNotification) saying which session is waiting.
+        3. In a long job, also write the question into the job's owner-items file, and keep
+           working on everything that does not depend on the answer.
+
+        Start long-running sessions in tmux, e.g.
+        `tmux new -d -s <name> claude --remote-control "<host>: <name>"`, so they survive a
+        closed SSH connection and can be opened from claude.ai/code.
+      '';
+
+      # Reach the other workers by their Tailscale name: `ssh nix32-main`, `ssh nix32`, ...
+      # (Tailscale SSH; the user on every worker is damianhc)
+      programs.ssh.extraConfig = ''
+        Host nix*
+          User damianhc
+          StrictHostKeyChecking accept-new
+          ServerAliveInterval 30
+          ServerAliveCountMax 4
+          ConnectTimeout 10
+      '';
+
+      # Recover from a crash without anyone at the laptop. nix32 froze on 2026-11-21 after a
+      # kernel oops and stayed down until someone held the power button.
+      boot.kernel.sysctl = {
+        "kernel.panic_on_oops" = 1; # an oops leaves a half-dead kernel; panic instead
+        "kernel.softlockup_panic" = 1; # a CPU stuck in the kernel: panic
+        "kernel.panic" = 10; # reboot 10 seconds after a panic
+      };
+      # Hardware watchdog: if the kernel freezes completely, the board resets the laptop
+      systemd.settings.Manager = {
+        RuntimeWatchdogSec = "60s";
+        RebootWatchdogSec = "10min";
+      };
+
       # Reach this laptop from all my devices, from anywhere (Tailscale SSH)
       services.tailscale = {
         enable = true;

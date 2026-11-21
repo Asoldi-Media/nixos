@@ -5,7 +5,7 @@
       self.nixosModules.default
       self.nixosModules.disko # installed with the shared disko layout
       self.nixosModules.hardware
-      self.nixosModules.worker # always-on worker since 2026-11-21, Tailscale name nix32-1
+      self.nixosModules.worker # always-on worker since 2026-11-21, Tailscale name nix32-main (the main worker)
       (
         { lib, ... }:
         {
