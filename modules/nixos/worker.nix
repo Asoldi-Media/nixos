@@ -12,7 +12,8 @@
       # - Workflow launches pre-approved (a large workflow script cannot be approved in the
       #   dialog at all, so without this a worker waits forever);
       # - after a usage limit, wait for the reset and carry on;
-      # - every session starts Remote Control, so it shows up at claude.ai/code.
+      # - every session starts Remote Control, so it shows up at claude.ai/code;
+      # - a phone notification (Claude app) when a question or prompt waits, or a task ends.
       environment.etc."claude-code/managed-settings.json".text = builtins.toJSON {
         permissions = {
           defaultMode = "auto";
@@ -21,6 +22,9 @@
         skipWorkflowUsageWarning = true;
         autoContinueAtUsageLimit = true;
         remoteControlAtStartup = true;
+        inputNeededNotifEnabled = true;
+        agentPushNotifEnabled = true;
+        taskCompleteNotifEnabled = true;
       };
       # Managed instructions for every Claude session on this laptop
       environment.etc."claude-code/CLAUDE.md".text = ''

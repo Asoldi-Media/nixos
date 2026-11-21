@@ -29,7 +29,8 @@ Any of your computers can be the day-to-day one, and the others are workers. Not
   - auto mode by default;
   - Workflow launches pre-approved;
   - carry on automatically after a usage limit;
-  - Remote Control in every session.
+  - Remote Control in every session;
+  - a phone notification (Claude app) when a question or approval is waiting.
 
   Normal work never stops for an approval. Auto mode's safety check still blocks risky actions on its own, without asking you.
 - **Where questions and approvals show up:** open **claude.ai/code** in a browser on any computer, or the **Claude app** on your phone (Code). Worker sessions are in the session list under their names, for example "nix32-main Wave 6 manager". Questions and any approval request show up inside that session, and you answer them there. Workers also send a push notification when one is waiting.
