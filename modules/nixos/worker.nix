@@ -72,6 +72,10 @@
           link = rel: "L+ ${home}/${rel} - - - - ${src}/${rel}";
         in
         [
+          # ~/.claude itself first, owned by damianhc. Without it a fresh install gets
+          # ~/.claude created as root: Claude Code cannot save its login there, and
+          # tmpfiles refuses the rules below (unsafe path), so nothing gets linked.
+          "d ${home} 0755 damianhc users -"
           "d ${home}/agents 0755 damianhc users -"
           "d ${home}/skills 0755 damianhc users -"
           "d ${home}/skills/model-routing 0755 damianhc users -"
@@ -168,20 +172,42 @@
       # cleanly at critical battery (e.g. charger unplugged) instead of dying hard.
       services.upower.criticalPowerAction = "PowerOff";
 
-      # Always on the charger: stop charging at 80% to spare the battery.
-      # Skipped on hardware without a charge limit.
+      # Always on the charger: spare the battery. Laptops with a charge threshold (the
+      # ThinkPads) stop charging at 80%. Laptops without one, such as Lenovo IdeaPads
+      # (nix8), get their long-life mode instead, which holds the battery at about 60%.
+      # Skipped on hardware with neither.
       systemd.services.battery-charge-limit = {
-        description = "Stop battery charging at 80%";
+        description = "Limit battery charging (80% threshold, or long-life mode)";
         wantedBy = [ "multi-user.target" ];
-        unitConfig.ConditionPathExistsGlob = "/sys/class/power_supply/BAT*/charge_control_end_threshold";
+        unitConfig.ConditionPathExistsGlob = [
+          "|/sys/class/power_supply/BAT*/charge_control_end_threshold"
+          "|/sys/class/power_supply/BAT*/charge_types"
+          "|/sys/bus/platform/drivers/ideapad_acpi/*/conservation_mode"
+        ];
         serviceConfig = {
           Type = "oneshot";
           RemainAfterExit = true;
         };
         script = ''
-          for f in /sys/class/power_supply/BAT*/charge_control_end_threshold; do
-            echo 80 > "$f"
+          limited=no
+          for bat in /sys/class/power_supply/BAT*; do
+            if [ -e "$bat/charge_control_end_threshold" ]; then
+              echo 80 > "$bat/charge_control_end_threshold"
+              limited=yes
+            elif [ -e "$bat/charge_types" ] && grep -qw Long_Life "$bat/charge_types"; then
+              echo Long_Life > "$bat/charge_types"
+              limited=yes
+            fi
           done
+          # Older kernels expose the IdeaPad switch only here (the same setting as Long_Life;
+          # newer kernels log it as deprecated, so only use it when nothing above applied)
+          if [ "$limited" = no ]; then
+            for f in /sys/bus/platform/drivers/ideapad_acpi/*/conservation_mode; do
+              if [ -e "$f" ]; then
+                echo 1 > "$f"
+              fi
+            done
+          fi
         '';
       };
 
