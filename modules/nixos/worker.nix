@@ -25,6 +25,11 @@
         inputNeededNotifEnabled = true;
         agentPushNotifEnabled = true;
         taskCompleteNotifEnabled = true;
+        # Sub-agents and workflow agents keep their prompt cache for an hour instead of
+        # 5 minutes (owner, 2026-11-22). They often wait on test runs or Grok jobs for longer
+        # than 5 minutes; with the short cache each such wait re-wrote their whole context,
+        # about a quarter of a week's Claude usage.
+        subagentPromptCacheTtl = "1h";
       };
       # Managed instructions for every Claude session on this laptop
       environment.etc."claude-code/CLAUDE.md".text = ''
@@ -45,7 +50,43 @@
         Start long-running sessions in tmux, e.g.
         `tmux new -d -s <name> claude --remote-control "<host>: <name>"`, so they survive a
         closed SSH connection and can be opened from claude.ai/code.
+
+        ## Model routing (2026-11-22)
+        Route work by cost. Mechanical lookups go to `scout` (Haiku), long jobs and Grok runs to
+        `runner` (Haiku), code search to `Explore` (Sonnet), medium work to Sonnet, code-writing
+        to Grok through Cursor, plans to Opus at high, and reviews plus push or publish gates to
+        `reviewer` (Opus at xhigh). Judgment never goes below Sonnet. Load the `model-routing`
+        skill before delegating or writing a workflow; every workflow agent names a tier, also
+        under ultracode.
       '';
+
+      # Model routing (owner, 2026-11-22: make the shared Claude limit last). The sub-agents,
+      # the routing skill and the usage scanners live in ./claude-code and are linked into
+      # damianhc's ~/.claude, so every worker has the same copies. Opus effort and the
+      # compaction point stay in ~/.claude/settings.json (modelSettings), so a machine or a
+      # session can still tune them with /effort and /autocompact.
+      systemd.tmpfiles.rules =
+        let
+          src = ../../claude-code;
+          home = "/home/damianhc/.claude";
+          link = rel: "L+ ${home}/${rel} - - - - ${src}/${rel}";
+        in
+        [
+          "d ${home}/agents 0755 damianhc users -"
+          "d ${home}/skills 0755 damianhc users -"
+          "d ${home}/skills/model-routing 0755 damianhc users -"
+          "d ${home}/usage-tools 0755 damianhc users -"
+        ]
+        ++ map link [
+          "agents/scout.md"
+          "agents/runner.md"
+          "agents/Explore.md"
+          "agents/reviewer.md"
+          "skills/model-routing/SKILL.md"
+          "usage-tools/usage-scan.mjs"
+          "usage-tools/cache-miss-scan.mjs"
+          "usage-tools/context-scan.mjs"
+        ];
 
       # Reach the other workers by their Tailscale name: `ssh nix32-main`, `ssh nix32`, ...
       # (Tailscale SSH; the user on every worker is damianhc)
