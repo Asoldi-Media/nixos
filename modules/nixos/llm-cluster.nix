@@ -62,6 +62,7 @@
           pkgs.openssh
           pkgs.coreutils
           pkgs.bash # /dev/tcp probe of each worker
+          pkgs.gnugrep # API key check
           pkgs.iproute2 # `ss` for the status check
         ];
         text = ''
@@ -92,6 +93,7 @@
                 context, sized by --fit to the free memory unless you pass -c N.
                 Later args win over these defaults.
                 Clients send the key in LLM_API_KEY_FILE as "Authorization: Bearer <key>".
+                Keep port $server_port: on Cospow only that port is closed to other users.
             help
                 Show this help.
 
@@ -189,6 +191,11 @@
                 head -c 32 /dev/urandom | base64 | tr -d '/+=\n' >"$key_file"
               )
               echo "llm-cluster: new API key in $key_file" >&2
+            fi
+            # A blank or comment-only file would leave the server without a key.
+            if ! grep -q '^[^#[:space:]]' "$key_file"; then
+              echo "llm-cluster: no key in $key_file; delete it to get a new one" >&2
+              exit 1
             fi
             model="''${LLM_MODEL:-$default_model}"
             # No -dev: llama.cpp puts the RPC workers first (fewer network hops), then this

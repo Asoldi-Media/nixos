@@ -45,6 +45,8 @@ cd /etc/nixos && git pull && sudo nixos-rebuild switch --flake /etc/nixos
 
 `nixos-rebuild` picks the config that matches the laptop's own hostname. The previous version stays in the boot menu, so you can undo a bad update by choosing the older entry at boot.
 
+The 8 GB machines (Ideapad, Stationary) would compile llama.cpp themselves this way. Update them from nix32-main instead: `nixos-rebuild switch --flake .#Ideapad --target-host root@nix8` (Stationary: `root@nix8-1`).
+
 To move every laptop to a newer NixOS:
 1. Run `nix flake update` on one machine.
 2. Build, test, commit `flake.lock` and push.

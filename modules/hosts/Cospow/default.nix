@@ -29,7 +29,7 @@
           users.users.sofushl.uid = 1001; # its existing uid, pinned for the slice below
           # Nor may it open the local model's port while llama-server is down, which
           # would catch the agents' prompts (no stop rule needed: it is a cgroup setting).
-          systemd.slices."user-${toString config.users.users.sofushl.uid}" = {
+          systemd.slices."user-1001" = {
             overrideStrategy = "asDropin";
             sliceConfig.SocketBindDeny = [ "tcp:${llmPort}" ];
           };
