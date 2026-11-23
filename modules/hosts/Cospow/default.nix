@@ -7,10 +7,15 @@
       self.nixosModules.hardware
       self.nixosModules.worker # always-on worker since 2026-11-21, Tailscale name nix32-main (the main worker)
       self.nixosModules.nas # the QNAP NAS on its own cable into the built-in Ethernet port (2026-11-23)
+      self.nixosModules.llm-cluster # llama.cpp RPC coordinator (Intel Arc)
       (
         { lib, ... }:
         {
           networking.hostName = "Cospow";
+          asoldi.llm = {
+            role = "coordinator";
+            gpu = "intel";
+          };
           # Core Ultra 7 155H: Intel NPU driver and firmware, as in the original install.
           hardware.cpu.intel.npu.enable = true;
 

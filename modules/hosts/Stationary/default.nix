@@ -6,10 +6,15 @@
       self.nixosModules.disko # fresh install with the shared disko layout (2026-11-23)
       self.nixosModules.hardware
       self.nixosModules.worker # always-on worker, Tailscale name nix8-1 (desktop: ASUS EX-A320M-GAMING, Ryzen 5 2600, 8 GB RAM, GTX 1650)
+      self.nixosModules.llm-cluster # llama.cpp RPC worker (GTX 1650)
       (
         { lib, pkgs, ... }:
         {
           networking.hostName = "Stationary";
+          asoldi.llm = {
+            role = "worker";
+            gpu = "nvidia";
+          };
 
           # Two SATA drives, no NVMe. NixOS goes on the 240 GB Kingston; the 512 GB
           # drive is extra storage at /data (nofail, so a missing drive never blocks boot).

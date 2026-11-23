@@ -8,6 +8,9 @@
     import-tree.url = "github:vic/import-tree";
     disko.url = "github:nix-community/disko";
     disko.inputs.nixpkgs.follows = "nixpkgs";
+    llama-cpp.url = "github:ggml-org/llama.cpp/b12655";
+    llama-cpp.inputs.nixpkgs.follows = "nixpkgs";
+    llama-cpp.inputs.flake-parts.follows = "flake-parts";
   };
 
   # Every .nix file under ./modules is a flake-parts module.
