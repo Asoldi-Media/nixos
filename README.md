@@ -14,6 +14,7 @@ All laptops use the same pinned NixOS: nixos-unstable through `flake.lock`, 26.1
 | `Eeto` | `nix32` | shared disko layout (`modules/hosts/disko.nix`) | yes |
 | `Cospow` | `nix32-main` | shared disko layout | yes, the main worker (sofushl is not an admin here) |
 | `Ideapad` | `nix8` | shared disko layout | yes |
+| `Stationary` | `nix8-1` | shared disko layout on SATA, 2nd drive at `/data` | yes |
 
 Every `.nix` file under `modules/` is loaded automatically (flake-parts + import-tree). Paths with `/_` in them are skipped. That is how each host's generated `_hardware.nix` stays a plain NixOS module.
 
