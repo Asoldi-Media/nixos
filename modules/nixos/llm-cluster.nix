@@ -12,13 +12,21 @@
 # by NVK on the open nouveau driver. No proprietary NVIDIA driver or CUDA build is
 # needed (tested 2026-11-23: both GTX 1650s and the RTX 500 show up in llama.cpp).
 # Shared-memory iGPUs are left out where a dedicated card exists, so the model
-# does not eat the machine's RAM twice.
+# does not eat the machine's RAM twice: llama.cpp skips the coordinator's Arc by
+# itself, and a worker hides its iGPU with asoldi.llm.vulkanDevice.
+#
+# The API needs a key (Authorization: Bearer <key>, from ~/.config/llm-cluster/api-key
+# on the coordinator). Every prompt passes through the workers' memory as hidden
+# states, so agents with client material use the cluster only with the owner's OK.
+#
+# Deploy from the coordinator (nixos-rebuild --target-host): llama.cpp is built here,
+# not in a binary cache, and the 8 GB workers should not compile it themselves.
 #
 # The fifth machine is the owner's Windows laptop (desktop-mep9e9d, ThinkPad
 # T14s Gen 3, 16 GB). It runs rpc-server.exe from llama.cpp's Windows Vulkan
-# release only when it is at home (it travels), so the cluster must work
-# without it. The model files live on the coordinator's SSD, with the NAS
-# (/mnt/nas/models) as the library.
+# release (same RPC protocol version), bound to its Tailscale address, only when
+# it is at home (it travels), so the cluster must work without it. The model files
+# live on the coordinator's SSD, with the NAS (/mnt/nas/models) as the library.
 { inputs, ... }:
 {
   flake.nixosModules.llm-cluster =
@@ -53,6 +61,7 @@
           llama
           pkgs.openssh
           pkgs.coreutils
+          pkgs.bash # /dev/tcp probe of each worker
           pkgs.iproute2 # `ss` for the status check
         ];
         text = ''
@@ -60,7 +69,6 @@
           rpc_port=${toString cfg.rpcPort}
           server_port=${toString cfg.serverPort}
           default_model=${lib.escapeShellArg cfg.model}
-          local_devices=${lib.escapeShellArg cfg.serverDevices}
           slots=${toString cfg.parallel}
 
           usage() {
@@ -78,10 +86,12 @@
                 Also reports whether llama-server is listening on port $server_port.
             serve [extra llama-server args...]
                 Run llama-server here and send each worker its share of the model.
-                Uses this machine's devices ($local_devices) plus every RPC worker;
-                what does not fit stays on this machine's CPU, read from the SSD.
-                $slots agent slots share one context, sized by --fit to the free
-                memory unless you pass -c N. Later args win over these defaults.
+                Uses every answering RPC worker (an offline one is reported and left
+                out) plus this machine's discrete GPU; what does not fit stays on
+                this machine's CPU, read from the SSD. $slots agent slots share one
+                context, sized by --fit to the free memory unless you pass -c N.
+                Later args win over these defaults.
+                Clients send the key in LLM_API_KEY_FILE as "Authorization: Bearer <key>".
             help
                 Show this help.
 
@@ -93,6 +103,9 @@
                 list of host:port. The Windows laptop is one of these, and only
                 when it is at home. Example: LLM_EXTRA_RPC=desktop-mep9e9d:$rpc_port
                 The cluster works without it.
+            LLM_API_KEY_FILE
+                The API key, made on the first serve if missing.
+                Default: ~/.config/llm-cluster/api-key
           EOF
           }
 
@@ -134,55 +147,57 @@
             fi
           }
 
+          # The answering RPC servers as host:port,... llama.cpp skips an offline one
+          # silently, so each is probed first and a missing one is reported.
           rpc_backends() {
-            local w list=""
+            local w extra list=""
+            local -a endpoints=() more=()
             for w in "''${workers[@]}"; do
-              if [ -n "$list" ]; then
-                list="$list,$w:$rpc_port"
+              endpoints+=("$w:$rpc_port")
+            done
+            extra="''${LLM_EXTRA_RPC:-}"
+            extra="''${extra// /}"
+            if [ -n "$extra" ]; then
+              IFS=',' read -r -a more <<<"$extra"
+              endpoints+=("''${more[@]}")
+            fi
+            for w in "''${endpoints[@]}"; do
+              [ -n "$w" ] || continue
+              # shellcheck disable=SC2016 # $1 and $2 belong to the inner bash
+              if timeout 3 bash -c 'exec 3<>"/dev/tcp/$1/$2"' _ "''${w%:*}" "''${w##*:}" 2>/dev/null; then
+                list="''${list:+$list,}$w"
               else
-                list="$w:$rpc_port"
+                echo "llm-cluster: $w is not answering, so it is left out" >&2
               fi
             done
-            if [ -n "''${LLM_EXTRA_RPC:-}" ]; then
-              if [ -n "$list" ]; then
-                list="$list,$LLM_EXTRA_RPC"
-              else
-                list="$LLM_EXTRA_RPC"
-              fi
-            fi
             printf '%s\n' "$list"
           }
 
-          # Devices for -dev: this machine's own (asoldi.llm.serverDevices), then RPC0..RPCn-1,
-          # which llama.cpp names in the order of the --rpc list.
-          device_list() {
-            local list="$1" devs="$local_devices" n i
-            IFS=',' read -r -a entries <<<"$list"
-            n=''${#entries[@]}
-            for ((i = 0; i < n; i++)); do
-              if [ -n "$devs" ]; then
-                devs="$devs,RPC$i"
-              else
-                devs="RPC$i"
-              fi
-            done
-            printf '%s\n' "$devs"
-          }
-
           run_serve() {
-            local list model devs
+            local list model key_file
             list=$(rpc_backends)
             if [ -z "$list" ]; then
-              echo "llm-cluster: no RPC backends. Set asoldi.llm.workers or LLM_EXTRA_RPC." >&2
+              echo "llm-cluster: no RPC worker is answering. Run llm-cluster start-workers first." >&2
               exit 1
             fi
-            devs=$(device_list "$list")
+            # Every request needs this key (Authorization: Bearer <key>); only /health is open.
+            key_file="''${LLM_API_KEY_FILE:-$HOME/.config/llm-cluster/api-key}"
+            if [ ! -s "$key_file" ]; then
+              (
+                umask 077
+                mkdir -p "$(dirname "$key_file")"
+                head -c 32 /dev/urandom | base64 | tr -d '/+=\n' >"$key_file"
+              )
+              echo "llm-cluster: new API key in $key_file" >&2
+            fi
             model="''${LLM_MODEL:-$default_model}"
-            # --fit (on by default) sizes each device's share to its free memory.
+            # No -dev: llama.cpp puts the RPC workers first (fewer network hops), then this
+            # machine's discrete GPU, and leaves out the Arc iGPU. --fit sizes each share.
             exec llama-server \
               -m "$model" \
               --rpc "$list" \
-              -dev "$devs" \
+              --api-key-file "$key_file" \
+              --no-slots \
               -np "$slots" \
               --kv-unified \
               --host 0.0.0.0 \
@@ -256,22 +271,14 @@
             in the worker list. Not opened in the firewall.
           '';
         };
-        rpcDevices = lib.mkOption {
-          type = lib.types.str;
-          default = "";
-          example = "Vulkan1";
+        vulkanDevice = lib.mkOption {
+          type = lib.types.nullOr (lib.types.strMatching "[0-9a-f]{4}:[0-9a-f]{4}");
+          default = null;
+          example = "10de:1f91";
           description = ''
-            Worker only: devices rpc-server offers, comma separated, as
-            `llama-server --list-devices` names them. Empty offers them all.
-          '';
-        };
-        serverDevices = lib.mkOption {
-          type = lib.types.str;
-          default = "";
-          example = "Vulkan1";
-          description = ''
-            Coordinator only: this machine's own devices used next to the RPC
-            workers, comma separated. Empty uses only the workers (and the CPU).
+            Worker only: PCI vendor:device id of the one GPU rpc-server offers
+            (MESA_VK_DEVICE_SELECT with `!`, which hides the others). Null offers
+            every GPU. Independent of Vulkan's device order.
           '';
         };
         parallel = lib.mkOption {
@@ -327,11 +334,24 @@
             description = "llama.cpp RPC server (started by the coordinator over SSH, not at boot)";
             after = [ "network-online.target" ];
             wants = [ "network-online.target" ];
-            environment.LLAMA_CACHE = "/var/cache/llama-rpc";
+            environment = {
+              LLAMA_CACHE = "/var/cache/llama-rpc";
+              # A DynamicUser has no home, so keep compiled shaders here between starts.
+              MESA_SHADER_CACHE_DIR = "/var/cache/llama-rpc/mesa";
+            }
+            // lib.optionalAttrs (cfg.vulkanDevice != null) {
+              MESA_VK_DEVICE_SELECT = "${cfg.vulkanDevice}!";
+            };
             serviceConfig = {
-              ExecStart =
-                "${llama}/bin/rpc-server --host 0.0.0.0 --port ${toString cfg.rpcPort} --cache"
-                + lib.optionalString (cfg.rpcDevices != "") " --device ${cfg.rpcDevices}";
+              ExecStart = "${llama}/bin/rpc-server --host 0.0.0.0 --port ${toString cfg.rpcPort} --cache";
+              # Second guard next to the firewall: only loopback and the tailnet.
+              IPAddressDeny = "any";
+              IPAddressAllow = [
+                "localhost"
+                "100.64.0.0/10"
+                "fd7a:115c:a1e0::/48"
+              ];
+              ProtectHome = true;
               DynamicUser = true;
               CacheDirectory = "llama-rpc";
               SupplementaryGroups = [

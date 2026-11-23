@@ -12,7 +12,7 @@
         asoldi.llm = {
           role = "worker";
           gpu = "vulkan";
-          rpcDevices = "Vulkan1"; # the GTX 1650 only; the Intel UHD would take the 8 GB of system RAM
+          vulkanDevice = "10de:1f91"; # the GTX 1650 only; the Intel UHD would take the 8 GB of system RAM
         };
       }
     ];
