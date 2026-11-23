@@ -6,6 +6,7 @@
       self.nixosModules.disko # installed with the shared disko layout
       self.nixosModules.hardware
       self.nixosModules.worker # always-on worker since 2026-11-21, Tailscale name nix32-main (the main worker)
+      self.nixosModules.nas # the QNAP NAS on its own cable into the built-in Ethernet port (2026-11-23)
       (
         { lib, ... }:
         {
@@ -31,6 +32,9 @@
             ip46tables -A asoldi-no-tailnet -j REJECT
             ip46tables -C OUTPUT -o tailscale0 -m owner --uid-owner sofushl -j asoldi-no-tailnet 2>/dev/null ||
               ip46tables -A OUTPUT -o tailscale0 -m owner --uid-owner sofushl -j asoldi-no-tailnet
+            # Nor the NAS cable (modules/nixos/nas.nix). No stop rule for it: it stays on reload.
+            ip46tables -C OUTPUT -o enp0s31f6 -m owner --uid-owner sofushl -j REJECT 2>/dev/null ||
+              ip46tables -A OUTPUT -o enp0s31f6 -m owner --uid-owner sofushl -j REJECT
           '';
           networking.firewall.extraStopCommands = ''
             ip46tables -D OUTPUT -o tailscale0 -m owner --uid-owner sofushl -j asoldi-no-tailnet 2>/dev/null || true
