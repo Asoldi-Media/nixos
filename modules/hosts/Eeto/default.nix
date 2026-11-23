@@ -6,12 +6,12 @@
       self.nixosModules.disko # installed with the shared disko layout
       self.nixosModules.hardware
       self.nixosModules.worker # always-on worker, Tailscale name nix32
-      self.nixosModules.llm-cluster # llama.cpp RPC worker (Iris Xe)
+      self.nixosModules.llm-cluster # llama.cpp RPC worker (Iris Xe, Vulkan)
       {
         networking.hostName = "Eeto";
         asoldi.llm = {
           role = "worker";
-          gpu = "intel";
+          gpu = "vulkan";
         };
       }
     ];

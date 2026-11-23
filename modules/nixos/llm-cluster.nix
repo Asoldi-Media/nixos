@@ -1,11 +1,18 @@
 # Feature module: one model split across the machines with llama.cpp RPC,
 # published as flake.nixosModules.llm-cluster.
 #
-# Cospow (Tailscale name nix32-main, ThinkPad P14s Gen 5, Arc graphics) is the
-# coordinator: it runs llama-server and sends each worker its share. The workers
-# run the RPC server, started and stopped by the coordinator over SSH, not at
-# boot: Eeto (nix32, ThinkPad T14s Gen 3, Iris Xe), Ideapad (nix8, IdeaPad L340,
-# GTX 1650 and Intel UHD) and Stationary (nix8-1, desktop, GTX 1650 only).
+# Cospow (Tailscale name nix32-main, ThinkPad P14s Gen 5, Arc graphics plus an
+# RTX 500 Ada) is the coordinator: it runs llama-server and sends each worker its
+# share. The workers run the RPC server, started and stopped by the coordinator
+# over SSH, never at boot: Eeto (nix32, ThinkPad T14s Gen 3, Iris Xe), Ideapad
+# (nix8, IdeaPad L340, GTX 1650 and Intel UHD) and Stationary (nix8-1, desktop,
+# GTX 1650 only). Nothing runs until `llm-cluster start-workers` and `serve`.
+#
+# Every GPU is driven through Vulkan (Mesa): the Intel ones by ANV, the NVIDIA ones
+# by NVK on the open nouveau driver. No proprietary NVIDIA driver or CUDA build is
+# needed (tested 2026-11-23: both GTX 1650s and the RTX 500 show up in llama.cpp).
+# Shared-memory iGPUs are left out where a dedicated card exists, so the model
+# does not eat the machine's RAM twice.
 #
 # The fifth machine is the owner's Windows laptop (desktop-mep9e9d, ThinkPad
 # T14s Gen 3, 16 GB). It runs rpc-server.exe from llama.cpp's Windows Vulkan
@@ -18,15 +25,15 @@
     { config, lib, pkgs, ... }:
     let
       cfg = config.asoldi.llm;
-      # useCuda / useVulkan are this package only. nixpkgs.config.cudaSupport
-      # stays unset: that flag would rebuild the whole system with CUDA.
       llama = (
         pkgs.llamaPackages.llama-cpp.override {
           useRpc = true;
-          useVulkan = cfg.gpu == "intel";
-          useCuda = cfg.gpu == "nvidia";
+          useWebUi = false; # upstream's Nix build of the browser UI fails at b12655; agents use the API
+          useVulkan = cfg.gpu == "vulkan";
+          useCuda = false;
         }
       ).overrideAttrs (old: {
+        webui = null; # upstream keeps the UI build as an attribute even with useWebUi = false
         # This pin installs the worker as ggml-rpc-server. The unit calls rpc-server.
         postInstall =
           (old.postInstall or "")
@@ -53,6 +60,8 @@
           rpc_port=${toString cfg.rpcPort}
           server_port=${toString cfg.serverPort}
           default_model=${lib.escapeShellArg cfg.model}
+          local_devices=${lib.escapeShellArg cfg.serverDevices}
+          slots=${toString cfg.parallel}
 
           usage() {
             cat <<EOF
@@ -69,6 +78,10 @@
                 Also reports whether llama-server is listening on port $server_port.
             serve [extra llama-server args...]
                 Run llama-server here and send each worker its share of the model.
+                Uses this machine's devices ($local_devices) plus every RPC worker;
+                what does not fit stays on this machine's CPU, read from the SSD.
+                $slots agent slots share one context, sized by --fit to the free
+                memory unless you pass -c N. Later args win over these defaults.
             help
                 Show this help.
 
@@ -140,18 +153,38 @@
             printf '%s\n' "$list"
           }
 
+          # Devices for -dev: this machine's own (asoldi.llm.serverDevices), then RPC0..RPCn-1,
+          # which llama.cpp names in the order of the --rpc list.
+          device_list() {
+            local list="$1" devs="$local_devices" n i
+            IFS=',' read -r -a entries <<<"$list"
+            n=''${#entries[@]}
+            for ((i = 0; i < n; i++)); do
+              if [ -n "$devs" ]; then
+                devs="$devs,RPC$i"
+              else
+                devs="RPC$i"
+              fi
+            done
+            printf '%s\n' "$devs"
+          }
+
           run_serve() {
-            local list model
+            local list model devs
             list=$(rpc_backends)
             if [ -z "$list" ]; then
               echo "llm-cluster: no RPC backends. Set asoldi.llm.workers or LLM_EXTRA_RPC." >&2
               exit 1
             fi
+            devs=$(device_list "$list")
             model="''${LLM_MODEL:-$default_model}"
+            # --fit (on by default) sizes each device's share to its free memory.
             exec llama-server \
               -m "$model" \
               --rpc "$list" \
-              -ngl 999 \
+              -dev "$devs" \
+              -np "$slots" \
+              --kv-unified \
               --host 0.0.0.0 \
               --port "$server_port" \
               --jinja \
@@ -207,13 +240,12 @@
         gpu = lib.mkOption {
           type = lib.types.enum [
             "none"
-            "intel"
-            "nvidia"
+            "vulkan"
           ];
           default = "none";
           description = ''
-            Which GPU this machine's llama.cpp is built for.
-            intel is Vulkan (Mesa), nvidia is CUDA, none is CPU.
+            vulkan builds llama.cpp for Vulkan (Mesa: ANV for Intel, NVK for NVIDIA);
+            none is CPU only.
           '';
         };
         rpcPort = lib.mkOption {
@@ -224,27 +256,31 @@
             in the worker list. Not opened in the firewall.
           '';
         };
-        prime = lib.mkOption {
-          type = lib.types.nullOr (
-            lib.types.submodule {
-              options = {
-                intelBusId = lib.mkOption {
-                  type = lib.types.str;
-                  example = "PCI:0:2:0";
-                  description = "PCI bus id of the Intel GPU.";
-                };
-                nvidiaBusId = lib.mkOption {
-                  type = lib.types.str;
-                  example = "PCI:1:0:0";
-                  description = "PCI bus id of the NVIDIA GPU.";
-                };
-              };
-            }
-          );
-          default = null;
+        rpcDevices = lib.mkOption {
+          type = lib.types.str;
+          default = "";
+          example = "Vulkan1";
           description = ''
-            Intel + NVIDIA graphics on one laptop (PRIME offload).
-            Null when the machine has a single GPU.
+            Worker only: devices rpc-server offers, comma separated, as
+            `llama-server --list-devices` names them. Empty offers them all.
+          '';
+        };
+        serverDevices = lib.mkOption {
+          type = lib.types.str;
+          default = "";
+          example = "Vulkan1";
+          description = ''
+            Coordinator only: this machine's own devices used next to the RPC
+            workers, comma separated. Empty uses only the workers (and the CPU).
+          '';
+        };
+        parallel = lib.mkOption {
+          type = lib.types.ints.positive;
+          default = 4;
+          description = ''
+            Coordinator only: agent slots in llama-server. They share one KV
+            cache (--kv-unified), whose size --fit picks from the free memory
+            unless `serve -c N` sets it.
           '';
         };
         workers = lib.mkOption {
@@ -278,36 +314,9 @@
           nixpkgs.overlays = [ inputs.llama-cpp.overlays.default ];
           environment.systemPackages = [ llama ];
         }
-        (lib.mkIf (cfg.gpu == "intel") {
-          # Mesa's Vulkan driver comes with this.
+        (lib.mkIf (cfg.gpu == "vulkan") {
+          # Mesa's Vulkan drivers (ANV, NVK) come with this.
           hardware.graphics.enable = true;
-        })
-        (lib.mkIf (cfg.gpu == "nvidia") {
-          # GTX 1650 is Turing. One architecture keeps the CUDA build short.
-          nixpkgs.config.cudaCapabilities = [ "7.5" ];
-          hardware.graphics.enable = true;
-          services.xserver.videoDrivers =
-            if cfg.prime != null then
-              [
-                "modesetting"
-                "nvidia"
-              ]
-            else
-              [ "nvidia" ];
-          hardware.nvidia = {
-            open = true;
-            modesetting.enable = true;
-            nvidiaSettings = false;
-            package = config.boot.kernelPackages.nvidiaPackages.latest;
-          }
-          // lib.optionalAttrs (cfg.prime != null) {
-            prime = {
-              offload.enable = true;
-              offload.enableOffloadCmd = true;
-              intelBusId = cfg.prime.intelBusId;
-              nvidiaBusId = cfg.prime.nvidiaBusId;
-            };
-          };
         })
         (lib.mkIf (cfg.role == "worker") {
           # rpc-server has no authentication, so this port must never be opened
@@ -320,7 +329,9 @@
             wants = [ "network-online.target" ];
             environment.LLAMA_CACHE = "/var/cache/llama-rpc";
             serviceConfig = {
-              ExecStart = "${llama}/bin/rpc-server --host 0.0.0.0 --port ${toString cfg.rpcPort} --cache";
+              ExecStart =
+                "${llama}/bin/rpc-server --host 0.0.0.0 --port ${toString cfg.rpcPort} --cache"
+                + lib.optionalString (cfg.rpcDevices != "") " --device ${cfg.rpcDevices}";
               DynamicUser = true;
               CacheDirectory = "llama-rpc";
               SupplementaryGroups = [
